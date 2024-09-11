@@ -1,6 +1,6 @@
 // Парсер медленный (со 120 элементами работает более 12 минут)
-// Так как пришлось поставить задержкипри клике на элементы  в полученном списке
-// Необходимо переписать на изначальный принцип, то есть получение, клик и скролл - так будет правильнее!!!
+// Так как пришлось поставить задержки при клике на элементы  в полученном списке
+// Данный парсер изначально проскроливает все элементы (чтобы разом получить их) и только потом прокликивает по ним!
 
 import puppeteer from "puppeteer";
 import * as fs from "fs";
@@ -8,143 +8,121 @@ import * as fs from "fs";
 const mapsParser = async (req) => {
   const browser = await puppeteer.launch({ headless: false });
   const page = await browser.newPage();
-  // await page.setUserAgent(
-  //     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-  //   );
 
-  await page.goto("https://www.google.ru/maps", {
-    waitUntil: "networkidle2",
-    timeout: 30000,
-  });
-  await page.setViewport({ width: 1480, height: 1000 });
+  const MAX_RETRIES = 3; // Максимальное количество попыток
+  let attempt = 0;
 
-  await page.waitForSelector("input", { waitUntil: 3000 });
+  const startParsing = async () => {
+    try {
+      await page.goto("https://www.google.ru/maps", {
+        waitUntil: "networkidle2",
+        timeout: 10000,
+      });
+      await page.setViewport({ width: 1480, height: 1000 });
 
-  await page.click("input");
-  await page.type("input", req, { delay: 200 });
-  await page.keyboard.press("Enter");
-  //   await page.keyboard.press("NumpadEnter");
-  //   await page.keyboard.press("\n");
+      await page.waitForSelector("input", {
+        waitUntil: "visible",
+        timeout: 3000,
+      });
 
-  await page.waitForSelector(".L1xEbb", { visible: true, timeout: 4000 });
-  await page.click(".L1xEbb");
+      await page.click("input");
+      await page.type("input", req, { delay: 200 });
+      await page.keyboard.press("Enter");
 
-  await page.mouse.wheel({ deltaY: 1500 });
+      await page.waitForSelector(".L1xEbb", { visible: true, timeout: 2000 });
+      await page.click(".L1xEbb");
 
-  await page.waitForSelector(".Nv2PK", { visible: true, timeout: 4000 });
+      await page.mouse.wheel({ deltaY: 1500 });
 
-  while (true) {
-    await page.evaluate(() => {
-      const scrollableElement = document.querySelector("#QA0Szd .QjC7t");
-      if (scrollableElement) {
-        // scrollableElement.scrollTop += 1500;
-        scrollableElement.scrollBy(0, 1500);
-      } else {
-        console.log("Элемент прокрутки не найден");
+      await page.waitForSelector(".Nv2PK", { visible: true, timeout: 2000 });
+
+      while (true) {
+        await page.evaluate(() => {
+          const scrollableElement = document.querySelector("#QA0Szd .QjC7t");
+          if (scrollableElement) {
+            scrollableElement.scrollBy(0, 1500);
+          } else {
+            console.log("Элемент прокрутки не найден");
+          }
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const elementExists = await page.$(".HlvSq");
+        if (elementExists) {
+          console.log("Элемент .HlvSq найден, прекращаем прокрутку.");
+          break;
+        }
       }
-    });
 
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+      const findList = await page.$$(".Nv2PK");
+      console.log("findList.length: ", findList.length);
 
-    const elementExists = await page.$(".HlvSq");
-    if (elementExists) {
-      console.log("Элемент .HlvSq найден, прекращаем прокрутку.");
-      break;
+      const uniqueData = new Set();
+      const allData = { data: [] };
+
+      for (let li of findList) {
+        // const elementHandle = await li.evaluateHandle((el) => el);
+        // const elementId = await page.evaluate((el) => el.outerHTML, elementHandle);
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        await li.click();
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        const element = await page.waitForSelector(
+          "#QA0Szd div.w6VYqd > div.Hu9e2e.tTVLSc > div > div.e07Vkf.kA9KIf > div > div > div.XiKgde",
+          { visible: true }
+        );
+
+        const result = await page.evaluate((el) => {
+          const name = el.querySelector("h1");
+          const adress = el.querySelector("[data-item-id='address']");
+          const website = el.querySelector("[data-item-id='authority']");
+          const phone = el.querySelector("[data-item-id^='phone:tel:']");
+          return {
+            name: name ? name.innerText : "",
+            adress: adress ? adress.innerText : "",
+            website: website ? website.href : "",
+            phone: phone
+              ? phone.getAttribute("data-item-id").replace("phone:tel:", "")
+              : "",
+          };
+        }, element);
+
+        const uniqueKey =
+          result.name + result.adress + result.website + result.phone;
+        if (!uniqueData.has(uniqueKey)) {
+          uniqueData.add(uniqueKey);
+          allData.data.push(result);
+        }
+        //   fs.appendFileSync("data.json", JSON.stringify(data) + "\n", (err) => {if(err) throw err})
+      }
+
+      console.log("allData.data.length:  ", allData.data.length);
+      fs.writeFile(
+        `${req.split(" ").join("_")}.db.json`,
+        JSON.stringify(allData, null, 2),
+        (err) => {
+          if (err) throw err;
+        }
+      );
+    } catch (error) {
+      console.error("Ошибка:", error);
+      if (attempt < MAX_RETRIES) {
+        attempt++;
+        console.log(`Попытка перезапуска парсера: ${attempt}`);
+        await page.reload(); // Перезагрузка страницы
+        await startParsing(); // Запуск парсинга заново
+      } else {
+        console.error(
+          "Максимальное количество попыток исчерпано. Завершение работы."
+        );
+      }
     }
-  }
-
-  const findList = await page.$$(".Nv2PK");
-  console.log("findList.length: ", findList.length);
-
-  const uniqueData = new Set();
-
-  const allData = {
-    data: [],
   };
 
-  for (let li of findList) {
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    // const elementHandle = await li.evaluateHandle((el) => el);
-    // const elementId = await page.evaluate((el) => el.outerHTML, elementHandle);
-    await li.click();
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    const element = await page.waitForSelector(
-      "#QA0Szd div.w6VYqd > div.Hu9e2e.tTVLSc > div > div.e07Vkf.kA9KIf > div > div > div.XiKgde"
-    );
-
-    const result = await page.evaluate((el) => {
-      const name = el.querySelector("h1");
-      const adress = el.querySelector("[data-item-id='address']");
-      const website = el.querySelector("[data-item-id='authority']");
-      const phone = el.querySelector("[data-item-id^='phone:tel:']");
-      return {
-        name: name ? name.innerText : "",
-        adress: adress ? adress.innerText : "",
-        website: website ? website.href : "",
-        phone: phone
-          ? phone.getAttribute("data-item-id").replace("phone:tel:", "")
-          : "",
-      };
-    }, element);
-
-    const uniqueKey = result.name + result.adress + result.website + result.phone;
-  if (!uniqueData.has(uniqueKey)) {
-    uniqueData.add(uniqueKey);
-    allData.data.push(result);
-  }
-  
-  //   fs.appendFileSync("data.json", JSON.stringify(data) + "\n", (err) => {if(err) throw err})
-}
-    
-  console.log(
-    "allData.data.length:  ",
-    allData.data.length,
-  );
-  fs.writeFile("data.json", JSON.stringify(allData, null, 2), (err) => {if(err) throw err});
+  await startParsing();
+  await browser.close();
 };
 
 const request = process.argv.slice(2).join(" ") || "Рестораны Казани";
 mapsParser(request);
-
-// while (true) {
-//   const findList = await page.$$(".Nv2PK");
-
-//   let newElementFound = false;
-//   i++;
-//   for (let li of findList) {
-//     const elementHandle = await li.evaluateHandle((el) => el);
-//     const elementId = await page.evaluate(
-//       (el) => el.outerHTML,
-//       elementHandle
-//     );
-
-//     if (!clickedElements.has(elementId)) {
-//       await li.click();
-//       clickedElements.add(elementId);
-//       newElementFound = true;
-//       clickCount++; // Увеличиваем счетчик кликов
-
-//       console.log(
-//         "Кликнули на элемент:",
-//         await page.evaluate((el) => el.innerText, li),
-//         clickedElements.size
-//       );
-
-//       // Прокручиваем страницу после каждых 5 кликов
-//       if (clickCount % 5 === 0) {
-//         await page.evaluate(() => window.scrollBy(0, 1600));
-//         await new Promise((resolve) => setTimeout(resolve, 4000)); // Ждем загрузки новых элементов
-//       }
-
-//       break; // Выходим из цикла, чтобы кликнуть на следующий элемент
-//     }
-//   }
-
-//   if (!newElementFound) {
-//     console.log("Все элементы были кликнуты.");
-//     break;
-//   }
-// }
-
-// await browser.close();
-// };
