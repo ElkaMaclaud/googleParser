@@ -27,64 +27,57 @@ const mapsParser = async (req) => {
     await page.mouse.wheel({ deltaY: 1500 });
 
     await page.waitForSelector(".Nv2PK", { visible: true, timeout: 2000 });
-    const clickedElements = new Set();
 
     const allData = { data: [] };
     const uniqueData = new Set();
-
-    const scrollableElement = await page.waitForSelector("#QA0Szd .QjC7t", {
-      visible: true,
-      timeout: 2000,
-    });
     let filteredArr = [];
+
+    let startIndex = 0
 
     while (true) {
       const findList = await page.$$(".Nv2PK");
-      filteredArr = []
-     
-      for (let li of findList) {
-        const elementId = await page.evaluate((el) => el.outerHTML, li);
-        if (!clickedElements.has(elementId)) {
-          console.log("1111111111111", )
-          filteredArr.push(li); 
-        }
-      }
-      console.log(
-        "////////////////////////",
-        filteredArr.length,
-        findList.length
-      );
+      const filteredArr = Array.from(findList).slice(startIndex)
+      startIndex += findList.length
 
       if (!filteredArr.length) {
         break;
       }
 
-      for (let i = 0; i < filteredArr.length; i ++) {
-        const li = filteredArr[i]
-        const elementId = await page.evaluate((el) => el.outerHTML, li);
+      for (let i = 0; i < filteredArr.length; i++) {
+        const li = filteredArr[i];
         let clickSuccess = false;
-        clickedElements.add(elementId);
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
-            await new Promise((resolve) => setTimeout(resolve, 3500));
-            await li.click();
-            clickSuccess = true;
-            break;
+            if (await page.evaluate((element) => element.isConnected, li)) {
+              await new Promise((resolve) => setTimeout(resolve, 3500));
+              await li.click();
+              clickSuccess = true;
+              break;
+            } else {
+              const id = await page.evaluate((element) => {
+                const el = element.querySelector(".hfpxzc");
+                const value = el.getAttribute("aria-label")
+                  ? el.getAttribute("aria-label").split("·")[0]
+                  : "";
+                return value;
+              }, li);
+              console.warn(
+                "Элемент больше не находится в DOM-дереве, пропускаем его.",
+                id
+              );
+            }
           } catch (error) {
             console.error("Ошибка при КЛИКЕ на элемент:", error);
-            if (attempt === 1) {
+            if (attempt === 2) {
               console.error("Не удалось кликнуть на элемент после 3 попыток.");
             }
           }
         }
-
         if (clickSuccess) {
-          await page.waitForSelector(
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          const element =  await page.waitForSelector(
             "#QA0Szd div.w6VYqd > div.Hu9e2e.tTVLSc > div > div.e07Vkf.kA9KIf > div > div > div.XiKgde",
             { visible: true, timeout: 2000 }
-          );
-          const element = await page.$(
-            "#QA0Szd div.w6VYqd > div.Hu9e2e.tTVLSc > div > div.e07Vkf.kA9KIf > div > div > div.XiKgde"
           );
 
           if (element) {
@@ -108,16 +101,44 @@ const mapsParser = async (req) => {
             if (!uniqueData.has(uniqueKey)) {
               uniqueData.add(uniqueKey);
               allData.data.push(result);
+            } else {
+              const id = await page.evaluate((element) => {
+                const el = element.querySelector(".hfpxzc");
+                const value = el.getAttribute("aria-label")
+                  ? el.getAttribute("aria-label").split("·")[0]
+                  : "";
+                return value;
+              }, li);
+              console.log("|||||||||||||||||||||||", uniqueData.size, id, "\n", uniqueKey)
             }
+          } else {
+            const id = await page.evaluate((element) => {
+              const el = element.querySelector(".hfpxzc");
+              const value = el.getAttribute("aria-label")
+                ? el.getAttribute("aria-label").split("·")[0]
+                : "";
+              return value;
+            }, li);
+            console.log("НЕТ ЭЛЕМЕНТА", id)
           }
+        } else {
+          const id = await page.evaluate((element) => {
+            const el = element.querySelector(".hfpxzc");
+            const value = el.getAttribute("aria-label")
+              ? el.getAttribute("aria-label").split("·")[0]
+              : "";
+            return value;
+          }, li);
+          console.log("clickSuccess = false   НЕТ ЭЛЕМЕНТА", id)
         }
       }
 
-      await page.evaluate((elScr) => {
+      await page.evaluate(() => {
+        const elScr = document.querySelector("#QA0Szd .QjC7t");
         if (elScr) {
           elScr.scrollBy(0, 1500);
         }
-      }, scrollableElement);
+      });
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
