@@ -60,16 +60,15 @@ const mapsParser = async (req) => {
 
       const uniqueData = new Set();
       const allData = { data: [] };
-      
+
       async function clickAndGetElementData(li) {
         // const elementHandle = await li.evaluateHandle((el) => el);
         // const elementId = await page.evaluate((el) => el.outerHTML, elementHandle);
         for (let i = 0; i < 3; i++) {
           try {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
             await li.click();
             break;
-          } catch(error) {
+          } catch (error) {
             console.error("Ошибка при КЛИКЕ на элемент:", error);
           }
         }
@@ -100,10 +99,6 @@ const mapsParser = async (req) => {
             uniqueData.add(uniqueKey);
             allData.data.push(result);
           } else {
-            console.log(
-              "/////////////////////////////////////////////////////////",
-              uniqueKey
-            );
             await clickAndGetElementData(li);
             // fs.appendFileSync("data.json", JSON.stringify(data) + "\n", (err) => {if(err) throw err})
           }
