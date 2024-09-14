@@ -159,3 +159,18 @@ const mapsParser = async (req) => {
 
 const request = process.argv.slice(2).join(" ") || "Рестораны Казани";
 mapsParser(request);
+
+
+// Для проверки в браузере
+// const arr = document.querySelectorAll(".Nv2PK")
+// const uniq = new Set()
+// let count = 0
+// for (let i of arr) {
+//     count++
+//     const value = i.querySelector("a").getAttribute("aria-label").split("·")[0]
+//     console.log("/////////////", count, value)
+//     if(uniq.has(value)) {
+//       console.log("||||||||||||||||||||||||||||||||||||||||", value)
+//     }
+//     uniq.add(value)
+//   }

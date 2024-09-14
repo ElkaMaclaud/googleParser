@@ -1,4 +1,4 @@
-// Парсер со 120 элементами работает примерно 7 - 8 минут - медленный, но надежный!
+// Парсер медленный по скорости, но вполне надежный: со 120 элементами работает примерно 9 - 10 минут
 // Данный парсер изначально проскроливает все элементы (чтобы разом получить их) и только потом прокликивает по ним!
 
 import puppeteer from "puppeteer";
@@ -63,67 +63,79 @@ const mapsParser = async (req) => {
     
 
       const findList = await page.$$(".Nv2PK");
-      console.log("findList.length: ", findList.length);
+      console.log(`Получено: ${findList.length} организаций`);
 
       const uniqueData = new Set();
       const allData = { data: [] };
       async function processElements(li, count = 1) {
-        if (count > 4) {
+        if (count > 6) {
+          // Да, такое кол-во по одному элементу вполне возможно при долгом ответе или "подсании" (в редких случаях)
           return;
         } else if (!(count % 2)) {
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
         async function clickAndGetElementData(li) {
-          for (let i = 0; i < 3; i++) {
+          let clickSuccess = false;
+          for (let attempt = 0; attempt < 3; attempt++) {
             try {
-              await li.click();
-              break;
+              if (await page.evaluate((element) => element.isConnected, li)) {
+                // page.$eval('.Nv2PK', (el) => el !== null)
+                await li.click();
+                clickSuccess = true;
+                break;
+              } else {
+                const id = await page.evaluate((element) => {
+                  const el = element.querySelector(".hfpxzc");
+                  const value = el.getAttribute("aria-label")
+                    ? el.getAttribute("aria-label").split("·")[0]
+                    : "";
+                  return value;
+                }, li);
+                console.log("Элемент больше не находится в DOM-дереве", id);
+              }
             } catch (error) {
               console.error("Ошибка при КЛИКЕ на элемент:", error);
+              await new Promise((resolve) => setTimeout(resolve, 300));
             }
           }
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          const element = await page.waitForSelector(
-            "#QA0Szd div.w6VYqd > div.Hu9e2e.tTVLSc > div > div.e07Vkf.kA9KIf > div > div > div.XiKgde",
-            { visible: true, timeout: 2000 }
-          );
-          if (element) {
-            const result = await page.evaluate((el) => {
-              const name = el.querySelector("h1");
-              const adress = el.querySelector("[data-item-id='address']");
-              const website = el.querySelector("[data-item-id='authority']");
-              const phone = el.querySelector("[data-item-id^='phone:tel:']");
-              return {
-                name: name ? name.innerText.trim() : "",
-                adress: adress
-                  ? adress.innerText.trim().replace(/^[^a-zA-Zа-яА-Я0-9]+/, "")
-                  : "",
-                website: website ? website.href.trim() : "",
-                phone: phone
-                  ? phone
-                      .getAttribute("data-item-id")
-                      .replace("phone:tel:", "")
-                      .trim()
-                  : "",
-              };
-            }, element);
+          if (clickSuccess) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            const element = await page.waitForSelector(
+              "#QA0Szd div.w6VYqd > div.Hu9e2e.tTVLSc > div > div.e07Vkf.kA9KIf > div > div > div.XiKgde",
+              { visible: true, timeout: 2000 }
+            );
 
-            const uniqueKey =
-              result.name + result.adress + result.website + result.phone;
-            if (!uniqueData.has(uniqueKey)) {
-              uniqueData.add(uniqueKey);
-              allData.data.push(result);
-            } else {
-              const id = await page.evaluate((element) => {
-                const el = element.querySelector(".hfpxzc");
-                const value = el.getAttribute("aria-label")
-                  ? el.getAttribute("aria-label").split("·")[0]
-                  : "";
-                return value;
-              }, li);
-              console.log("/////////////////////////////", id, uniqueKey);
-              await new Promise((resolve) => setTimeout(resolve, 500));
-              await processElements(li, count + 1);
+            if (element) {
+              const result = await page.evaluate((el) => {
+                const name = el.querySelector("h1");
+                const adress = el.querySelector("[data-item-id='address']");
+                const website = el.querySelector("[data-item-id='authority']");
+                const phone = el.querySelector("[data-item-id^='phone:tel:']");
+                return {
+                  name: name ? name.innerText.trim() : "",
+                  adress: adress
+                    ? adress.innerText
+                        .trim()
+                        .replace(/^[^a-zA-Zа-яА-Я0-9]+/, "")
+                    : "",
+                  website: website ? website.href.trim() : "",
+                  phone: phone
+                    ? phone
+                        .getAttribute("data-item-id")
+                        .replace("phone:tel:", "")
+                        .trim()
+                    : "",
+                };
+              }, element);
+
+              const uniqueKey =
+                result.name + result.adress + result.website + result.phone;
+              if (!uniqueData.has(uniqueKey)) {
+                uniqueData.add(uniqueKey);
+                allData.data.push(result);
+              } else {
+                await processElements(li, count + 1);
+              }
             }
           } else {
             const id = await page.evaluate((element) => {
@@ -133,11 +145,9 @@ const mapsParser = async (req) => {
                 : "";
               return value;
             }, li);
-            console.log("НЕТ ЭЛЕМЕНТА", id);
-            processElements(li, count + 1);
+            console.log("НЕТ ЭЛЕМЕНТА", id, li);
           }
         }
-        await new Promise((resolve) => setTimeout(resolve, 500));
         await clickAndGetElementData(li);
       }
 
@@ -145,7 +155,7 @@ const mapsParser = async (req) => {
         await processElements(li);
       }
 
-      console.log("allData.data.length:  ", allData.data.length);
+      console.log(`Записано и сохранено: ${allData.data.length} организаций`);
       fs.writeFile(
         `${req.split(" ").join("_")}_scrollStart.db.json`,
         JSON.stringify(allData, null, 2),
@@ -169,46 +179,8 @@ const mapsParser = async (req) => {
   };
 
   await startParsing();
-  // await browser.close();
+  await browser.close();
 };
 
 const request = process.argv.slice(2).join(" ") || "Рестораны Казани";
 mapsParser(request);
-
-// while (true) {
-//   const startTime = Date.now();
-
-//   await page.evaluate(() => {
-//     const scrollableElement = document.querySelector("#QA0Szd .QjC7t");
-//     if (scrollableElement) {
-//       scrollableElement.scrollBy(0, 1500);
-//     } else {
-//       console.log("Элемент прокрутки не найден");
-//     }
-//   });
-
-//   await new Promise((resolve) => setTimeout(resolve, 500));
-
-//   const elementExists = await page.$(".HlvSq");
-//   if (elementExists) {
-//     break;
-//   }
-//   if (Date.now() - startTime > TIMEOUT) {
-//     await page.reload();
-//     break;
-//   }
-// }
-
-// Для проверки в браузере
-// const arr = document.querySelectorAll(".Nv2PK")
-// const uniq = new Set()
-// let count = 0
-// for (let i of arr) {
-//     count++
-//     const value = i.querySelector("a").getAttribute("aria-label").split("·")[0]
-//     console.log("/////////////", count, value)
-//     if(uniq.has(value)) {
-//       console.log("||||||||||||||||||||||||||||||||||||||||", value)
-//     }
-//     uniq.add(value)
-//   }
