@@ -67,7 +67,7 @@ const mapsParser = async (req) => {
                   return value;
                 }, li);
                 console.log("Элемент больше не находится в DOM-дереве", id);
-                return
+                attempt = 3;
               }
             } catch (error) {
               console.error("Ошибка при КЛИКЕ на элемент:", error);

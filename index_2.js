@@ -65,11 +65,22 @@ const mapsParser = async (req) => {
                     : "";
                   return value;
                 }, li);
-                console.log("Элемент больше не находится в DOM-дереве", id);
-                return
+                console.log(
+                  "Элемент больше не находится в DOM-дереве",
+                  clickSuccess,
+                  id
+                );
+                attempt = 3;
               }
             } catch (error) {
-              console.error("Ошибка при КЛИКЕ на элемент:", error);
+              const id = await page.evaluate((element) => {
+                const el = element.querySelector(".hfpxzc");
+                const value = el.getAttribute("aria-label")
+                  ? el.getAttribute("aria-label").split("·")[0]
+                  : "";
+                return value;
+              }, li);
+              console.error("Ошибка при КЛИКЕ на элемент:", id, error);
               await new Promise((resolve) => setTimeout(resolve, 300));
             }
           }
