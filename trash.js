@@ -162,15 +162,16 @@ mapsParser(request);
 
 
 // Для проверки в браузере
-// const arr = document.querySelectorAll(".Nv2PK")
-// const uniq = new Set()
-// let count = 0
-// for (let i of arr) {
-//     count++
-//     const value = i.querySelector("a").getAttribute("aria-label").split("·")[0]
-//     console.log("/////////////", count, value)
-//     if(uniq.has(value)) {
-//       console.log("||||||||||||||||||||||||||||||||||||||||", value)
-//     }
-//     uniq.add(value)
-//   }
+const arr = document.querySelectorAll(".Nv2PK")
+const uniq = new Set()
+let count = 0
+for (let i of arr) {
+    count++
+    const value = i.querySelector("a").getAttribute("aria-label").split("·")[0]
+    const addressElement = i.querySelector('.W4Efsd span:nth-child(2) span:nth-child(2)').textContent.trim();
+    console.log("/////////////", count, value, addressElement)
+    if(uniq.has(value+addressElement)) {
+      console.log("||||||||||||||||||||||||||||||||||||||||", value+addressElement)
+    }
+    uniq.add(value+addressElement)
+  }

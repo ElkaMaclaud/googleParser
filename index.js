@@ -5,8 +5,27 @@ import puppeteer from "puppeteer";
 import * as fs from "fs";
 
 const mapsParser = async (req) => {
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch({
+    headless: false, args: [
+      '--disable-notifications',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-infobars',
+      '--disable-extensions',
+      '--disable-popup-blocking'
+    ]
+  });
+
   const page = await browser.newPage();
+
+  await page.setRequestInterception(true);
+  page.on('request', (request) => {
+    if (request.url().includes('push')) {
+      request.abort(); // Отменить запросы на пуш-уведомления
+    } else {
+      request.continue();
+    }
+  });
 
   const MAX_RETRIES = 3;
   const TIMEOUT = 10000;
@@ -29,60 +48,81 @@ const mapsParser = async (req) => {
       await page.type("input", req, { delay: 200 });
       await page.keyboard.press("Enter");
 
-      await page.waitForSelector(".L1xEbb", { visible: true, timeout: 2000 });
+      await page.waitForSelector(".L1xEbb", { visible: true });
+
       await page.click(".L1xEbb");
 
       await page.mouse.wheel({ deltaY: 1500 });
 
-      await page.waitForSelector(".Nv2PK", { visible: true, timeout: 2000 });
+      await page.waitForSelector(".Nv2PK", { visible: true });
 
       while (true) {
         const startTime = Date.now();
-    
+
         await page.evaluate(() => {
-            const scrollableElement = document.querySelector("#QA0Szd .QjC7t");
-            if (scrollableElement) {
-                scrollableElement.scrollBy(0, 1500);
-            } 
+          const scrollableElement = document.querySelector("#QA0Szd .QjC7t");
+          if (scrollableElement) {
+            scrollableElement.scrollBy(0, 1500);
+          }
         });
-    
-    
+
+
         if (Date.now() - startTime > TIMEOUT) {
-            console.log("Перезагрузка страницы из-за подвисания");
-            await page.reload();
-            continue; 
+          console.log("Перезагрузка страницы из-за подвисания");
+          await page.reload();
+          continue;
         }
-        
+
         await new Promise((resolve) => setTimeout(resolve, 500));
-    
+
         const elementExists = await page.$(".HlvSq");
         if (elementExists) {
-            break;
+          break;
         }
-    }
-    
+      }
+
+      async function hideDialogIfExists() {
+        await page.evaluate(() => {
+          const dialog = document.querySelector('div#ucc-0'); // Используем ID для поиска
+          if (dialog) {
+            dialog.style.display = 'none'; // Скрываем элемент
+            console.log("Элемент скрыт.");
+          } else {
+            console.log("Элемент не найден.");
+          }
+        });
+      }
 
       const findList = await page.$$(".Nv2PK");
       console.log(`Получено: ${findList.length} организаций`);
 
       const uniqueData = new Set();
       const allData = { data: [] };
-      async function processElements(li, count = 1) {
-        if (count > 6) {
-          // Да, такое кол-во по одному элементу вполне возможно при долгом ответе или "подсании" (в редких случаях)
-          return;
-        } else if (!(count % 2)) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
+      async function processElements(li) {
         async function clickAndGetElementData(li) {
           let clickSuccess = false;
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
               if (await page.evaluate((element) => element.isConnected, li)) {
-                // page.$eval('.Nv2PK', (el) => el !== null)
-                await li.click();
-                clickSuccess = true;
-                break;
+                const id = await page.evaluate((element) => {
+                  const el = element.querySelector(".hfpxzc");
+                  return el.getAttribute("aria-label") || "";
+                }, li);
+
+                // Проверяем, содержит ли aria-label символ "·Посещенная ссылка"
+                if (id.match(/·/)) {
+                  console.log("Элемент уже посещен, пропускаем клик:", id);
+                  clickSuccess = true
+                  break;
+                } else {
+                  const linkElement = await page.evaluateHandle((element) => {
+                    return element.querySelector('a');
+                  }, li);
+                  await hideDialogIfExists();
+                  await linkElement.click();
+                  clickSuccess = true
+                  break;
+                }
               } else {
                 const id = await page.evaluate((element) => {
                   const el = element.querySelector(".hfpxzc");
@@ -100,10 +140,10 @@ const mapsParser = async (req) => {
             }
           }
           if (clickSuccess) {
-            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await new Promise((resolve) => setTimeout(resolve, 4000));
             const element = await page.waitForSelector(
               "#QA0Szd div.w6VYqd > div.Hu9e2e.tTVLSc > div > div.e07Vkf.kA9KIf > div > div > div.XiKgde",
-              { visible: true, timeout: 2000 }
+              { visible: true }
             );
 
             if (element) {
@@ -116,15 +156,15 @@ const mapsParser = async (req) => {
                   name: name ? name.innerText.trim() : "",
                   adress: adress
                     ? adress.innerText
-                        .trim()
-                        .replace(/^[^a-zA-Zа-яА-Я0-9]+/, "")
+                      .trim()
+                      .replace(/^[^a-zA-Zа-яА-Я0-9]+/, "")
                     : "",
                   website: website ? website.href.trim() : "",
                   phone: phone
                     ? phone
-                        .getAttribute("data-item-id")
-                        .replace("phone:tel:", "")
-                        .trim()
+                      .getAttribute("data-item-id")
+                      .replace("phone:tel:", "")
+                      .trim()
                     : "",
                 };
               }, element);
@@ -135,7 +175,7 @@ const mapsParser = async (req) => {
                 uniqueData.add(uniqueKey);
                 allData.data.push(result);
               } else {
-                await processElements(li, count + 1);
+                console.log("На данный элемент уже кликали", uniqueKey)
               }
             }
           } else {

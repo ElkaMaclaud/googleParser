@@ -42,6 +42,18 @@ const mapsParser = async (req) => {
       const uniqueData = new Set();
       const clickedElements = new Set();
 
+      async function hideDialogIfExists() {
+        await page.evaluate(() => {
+          const dialog = document.querySelector('div#ucc-0');
+          if (dialog) {
+            dialog.style.display = 'none';
+            console.log("Элемент скрыт.");
+          } else {
+            console.log("Элемент не найден.");
+          }
+        });
+      }
+
       async function processElements(li, count = 1) {
         if (count > 6) {
           return;
@@ -54,6 +66,7 @@ const mapsParser = async (req) => {
             try {
               if (await page.evaluate((element) => element.isConnected, li)) {
                 // page.$eval('.Nv2PK', (el) => el !== null)
+                await hideDialogIfExists();
                 await li.click();
                 clickSuccess = true;
                 break;
@@ -192,7 +205,7 @@ const mapsParser = async (req) => {
 
       console.log(`Записано и сохранено: ${allData.data.length} организаций`);
       fs.writeFile(
-        `${req.split(" ").join("_")}_3.db.json`,
+        `${req.split(" ").join("_")}_2.db.json`,
         JSON.stringify(allData, null, 2),
         (err) => {
           if (err) throw err;
