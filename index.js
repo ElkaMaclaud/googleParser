@@ -140,43 +140,43 @@ const mapsParser = async (req) => {
             }
           }
           if (clickSuccess) {
-            await new Promise((resolve) => setTimeout(resolve, 4000));
-            const element = await page.waitForSelector(
-              "#QA0Szd div.w6VYqd > div.Hu9e2e.tTVLSc > div > div.e07Vkf.kA9KIf > div > div > div.XiKgde",
-              { visible: true }
-            );
+              await new Promise((resolve) => setTimeout(resolve, 4000));
+              const element = await page.waitForSelector(
+                "#QA0Szd div.w6VYqd > div.Hu9e2e.tTVLSc > div > div.e07Vkf.kA9KIf > div > div > div.XiKgde",
+                { visible: true }
+              );
 
-            if (element) {
-              const result = await page.evaluate((el) => {
-                const name = el.querySelector("h1");
-                const adress = el.querySelector("[data-item-id='address']");
-                const website = el.querySelector("[data-item-id='authority']");
-                const phone = el.querySelector("[data-item-id^='phone:tel:']");
-                return {
-                  name: name ? name.innerText.trim() : "",
-                  adress: adress
-                    ? adress.innerText
-                      .trim()
-                      .replace(/^[^a-zA-Zа-яА-Я0-9]+/, "")
-                    : "",
-                  website: website ? website.href.trim() : "",
-                  phone: phone
-                    ? phone
-                      .getAttribute("data-item-id")
-                      .replace("phone:tel:", "")
-                      .trim()
-                    : "",
-                };
-              }, element);
+              if (element) {
+                const result = await page.evaluate((el) => {
+                  const name = el.querySelector("h1");
+                  const adress = el.querySelector("[data-item-id='address']");
+                  const website = el.querySelector("[data-item-id='authority']");
+                  const phone = el.querySelector("[data-item-id^='phone:tel:']");
+                  return {
+                    name: name ? name.innerText.trim() : "",
+                    adress: adress
+                      ? adress.innerText
+                        .trim()
+                        .replace(/^[^a-zA-Zа-яА-Я0-9]+/, "")
+                      : "",
+                    website: website ? website.href.trim() : "",
+                    phone: phone
+                      ? phone
+                        .getAttribute("data-item-id")
+                        .replace("phone:tel:", "")
+                        .trim()
+                      : "",
+                  };
+                }, element);
 
-              const uniqueKey =
-                result.name + result.adress + result.website + result.phone;
-              if (!uniqueData.has(uniqueKey)) {
-                uniqueData.add(uniqueKey);
-                allData.data.push(result);
-              } else {
-                console.log("На данный элемент уже кликали", uniqueKey)
-              }
+                const uniqueKey =
+                  result.name + result.adress + result.website + result.phone;
+                if (!uniqueData.has(uniqueKey)) {
+                  uniqueData.add(uniqueKey);
+                  allData.data.push(result);
+                } else {
+                  console.log("На данный элемент уже кликали", uniqueKey)
+                }
             }
           } else {
             const id = await page.evaluate((element) => {
