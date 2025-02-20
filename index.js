@@ -6,7 +6,7 @@ import * as fs from "fs";
 
 const mapsParser = async (req) => {
   const browser = await puppeteer.launch({
-    headless: false, args: [
+    headless: true, args: [
       '--disable-notifications',
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -83,9 +83,9 @@ const mapsParser = async (req) => {
 
       async function hideDialogIfExists() {
         await page.evaluate(() => {
-          const dialog = document.querySelector('div#ucc-0'); // Используем ID для поиска
+          const dialog = document.querySelector('div#ucc-0'); 
           if (dialog) {
-            dialog.style.display = 'none'; // Скрываем элемент
+            dialog.style.display = 'none';
             console.log("Элемент скрыт.");
           } else {
             console.log("Элемент не найден.");
@@ -98,29 +98,34 @@ const mapsParser = async (req) => {
 
       const uniqueData = new Set();
       const allData = { data: [] };
-      async function processElements(li) {
+      async function processElements(li, count = 1) {
+        if (count > 3) {
+          return;
+        } 
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
         async function clickAndGetElementData(li) {
           let clickSuccess = false;
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
               if (await page.evaluate((element) => element.isConnected, li)) {
-                const id = await page.evaluate((element) => {
-                  const el = element.querySelector(".hfpxzc");
-                  return el.getAttribute("aria-label") || "";
+                const linkElementHandle = await page.evaluateHandle((element) => {
+                  return element.querySelector('a');
                 }, li);
-
+                
+                const id = await linkElementHandle.evaluate((el) => {
+                  return el.getAttribute("aria-label") || "";
+                });
+                
                 // Проверяем, содержит ли aria-label символ "·Посещенная ссылка"
                 if (id.match(/·/)) {
                   console.log("Элемент уже посещен, пропускаем клик:", id);
-                  clickSuccess = true
+                  clickSuccess = true;
                   break;
                 } else {
-                  const linkElement = await page.evaluateHandle((element) => {
-                    return element.querySelector('a');
-                  }, li);
                   await hideDialogIfExists();
-                  await linkElement.click();
-                  clickSuccess = true
+                  await linkElementHandle.click();
+                  clickSuccess = true;
                   break;
                 }
               } else {
@@ -175,6 +180,7 @@ const mapsParser = async (req) => {
                   uniqueData.add(uniqueKey);
                   allData.data.push(result);
                 } else {
+                  await processElements(li, count + 1);
                   console.log("На данный элемент уже кликали", uniqueKey)
                 }
             }

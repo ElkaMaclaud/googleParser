@@ -1,16 +1,16 @@
 // Парсер отрабатывает  120 элементов в среднем за 6 -7 минут.
 // Принцип данного парсера отличается от того, что в index тем, что скроллит и сразу кликает по подгруженным элементам
-// Элементы в google maps добавляются(при подгрузке) при скролле по порядку и в дом дереве также сохраняется порядок
+// Элементы в google maps добавляются(при подгрузке) при скролле по порядку и в дом дереве также сохраняется порядок, что и так очевидно
 // Поэтому извлечение идет по индексу (то есть зависит от количества всех эл. - прокликанные эл.)
 // Извлечение по индексу - не лучший ВАРИАНТ!!!!
-// Данный принцип создан просто для одного из вариантов, не очень надежных на практике, 
+// Данный принцип создан просто как один из вариантов, не очень надежных на практике, 
 // т.к. порой бывает вклинивается рекламные элементы в список и могут записаться не все данные в файл!
 
 import puppeteer from "puppeteer";
 import * as fs from "fs";
 
 const mapsParser = async (req) => {
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
   const MAX_RETRIES = 3;
   let attempt = 0;
@@ -54,22 +54,35 @@ const mapsParser = async (req) => {
         });
       }
       async function processElements(li, count = 1) {
-        if (count > 6) {
-          // Да, такое кол-во по одному элементу вполне возможно при долгом ответе или "подсании" (в редких случаях)
+        if (count > 3) {
           return;
-        } else if (!(count % 2)) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
+        } 
+        await new Promise((resolve) => setTimeout(resolve, 1000));
         async function clickAndGetElementData(li) {
           let clickSuccess = false;
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
               if (await page.evaluate((element) => element.isConnected, li)) {
                 // page.$eval('.Nv2PK', (el) => el !== null)
-                await hideDialogIfExists();
-                await li.click();
-                clickSuccess = true;
-                break;
+                const linkElementHandle = await page.evaluateHandle((element) => {
+                  return element.querySelector('a');
+                }, li);
+                
+                const id = await linkElementHandle.evaluate((el) => {
+                  return el.getAttribute("aria-label") || "";
+                });
+                
+                // Проверяем, содержит ли aria-label символ "·Посещенная ссылка"
+                if (id.match(/·/)) {
+                  console.log("Элемент уже посещен, пропускаем клик:", id);
+                  clickSuccess = true;
+                  break;
+                } else {
+                  await hideDialogIfExists();
+                  await linkElementHandle.click();
+                  clickSuccess = true;
+                  break;
+                }
               } else {
                 const id = await page.evaluate((element) => {
                   const el = element.querySelector(".hfpxzc");
@@ -103,15 +116,15 @@ const mapsParser = async (req) => {
                   name: name ? name.innerText.trim() : "",
                   adress: adress
                     ? adress.innerText
-                        .trim()
-                        .replace(/^[^a-zA-Zа-яА-Я0-9]+/, "")
+                      .trim()
+                      .replace(/^[^a-zA-Zа-яА-Я0-9]+/, "")
                     : "",
                   website: website ? website.href.trim() : "",
                   phone: phone
                     ? phone
-                        .getAttribute("data-item-id")
-                        .replace("phone:tel:", "")
-                        .trim()
+                      .getAttribute("data-item-id")
+                      .replace("phone:tel:", "")
+                      .trim()
                     : "",
                 };
               }, element);
@@ -143,7 +156,7 @@ const mapsParser = async (req) => {
       while (true) {
         const findList = await page.$$(".Nv2PK");
         const filteredArr = Array.from(findList).slice(startIndex);
-        startIndex += filteredArr.length; 
+        startIndex += filteredArr.length;
 
         // Порой в список попадают рекламные элементы (ЧУДЕСА и ТОЛЬКО!!!!) - для отслеживания всех элементов
         // const arr = await page.$$eval('.Nv2PK', (elements) => {
